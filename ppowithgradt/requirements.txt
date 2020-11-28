@@ -1,0 +1,7 @@
+ruamel.yaml==0.15.96
+tensorflow==2.3.0
+tensorboardX==2.1
+tqdm==4.48.2
+pytest==6.0.1
+gym==0.17.2
+box2d-py==2.3.8
