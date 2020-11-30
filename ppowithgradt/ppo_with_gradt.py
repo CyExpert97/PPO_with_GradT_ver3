@@ -4,6 +4,7 @@ import os
 import json
 
 import numpy as np
+import tensorflow as tf
 from copy import deepcopy
 
 import gym
@@ -11,7 +12,7 @@ import gym
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Input, Dense
 from tensorflow.keras.optimizers import Adam
-
+from tensorflow.keras.losses import sparse_categorical_crossentropy
 
 from tensorboardX import SummaryWriter
 
@@ -515,12 +516,14 @@ class PPOGameMemory:
 
 
 class Agent:
-    def __init__(self, actor, critic, policy, trajectory, memory_size, writer):
+    def __init__(self, actor, critic, policy, trajectory, memory_size, writer, **kwargs):
         self.critic = critic
         self.actor = actor
         self.policy = policy
         self.trajectory = trajectory
         self.memory_size = memory_size
+        self.optimizer = kwargs.get('optimizer', self.optimizer)
+        self.model = kwargs.get('model', None)
         self.gradient_steps = 0
         self.writer = writer
         pass
@@ -576,6 +579,14 @@ class Agent:
         Manual tick policy
         """
         self.policy.Tick()
+
+    def step(self, x_true, y_true):
+        with tf.GradientTape() as tape:
+            pred = self.model(x_true)
+            loss = sparse_categorical_crossentropy(y_true, pred)
+
+        grads = tape.gradient(loss, self.model.trainable_variables)
+        self.optimizer.apply_gradients(zip(grads, self.model.trainable_variables))
 
     def __replay(self):
         # replay
