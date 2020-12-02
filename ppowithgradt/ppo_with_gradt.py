@@ -8,6 +8,7 @@ import tensorflow as tf
 from copy import deepcopy
 
 import gym
+import math
 
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Input, Dense
@@ -522,7 +523,8 @@ class Agent:
         self.policy = policy
         self.trajectory = trajectory
         self.memory_size = memory_size
-        self.optimizer = kwargs.get('optimizer', self.optimizer)
+        learning_rate = kwargs.get('learning_rate', 1e-4)
+        self.optimizer = kwargs.get('optimizer', Adam(lr=learning_rate))
         self.model = kwargs.get('model', None)
         self.gradient_steps = 0
         self.writer = writer
@@ -580,19 +582,27 @@ class Agent:
         """
         self.policy.Tick()
 
-    def step(self, x_true, y_true):
-        with tf.GradientTape() as tape:
-            pred = self.model(x_true)
-            loss = sparse_categorical_crossentropy(y_true, pred)
+    # def step(self, x_true, y_true):
+    #     with tf.GradientTape() as tape:
+    #         y_pred = self.model(x_true)
+    #         loss = get_ppo_actor_loss_clipped_obj(y_true, y_pred)  # Look into loss function differences(Want something more towards PPO).
+    #
+    #     grads = tape.gradient(loss, self.model.trainable_variables)
+    #     self.optimizer.apply_gradients(zip(grads, self.model.trainable_variables))
 
-        grads = tape.gradient(loss, self.model.trainable_variables)
-        self.optimizer.apply_gradients(zip(grads, self.model.trainable_variables))
+    # def training_loop(self):
+    #     bat_per_epoch = math.floor(len(self.x_train) / BATCH_SIZE)
+    #     for epoch in range(EPOCHS):
+    #         print('=', end='')
+    #         for i in range(bat_per_epoch):
+    #             n = i * BATCH_SIZE
+    #             self.step(self.x_train[n:n + BATCH_SIZE], self.y_train[n:n + BATCH_SIZE])
 
     def __replay(self):
         # replay
         obs, actions, old_preds, rewards = self.trajectory.PopBatch(self.memory_size)
 
-        pred_values = self.critic.model.predict(obs)
+        pred_values = self.critic.predict(obs)
         advantages = rewards - pred_values
         actor_loss = self.actor.model.fit(
             [obs, advantages, old_preds],
@@ -606,10 +616,29 @@ class Agent:
         self.writer.add_scalar('Critic loss', critic_loss.history['loss'][-1], self.gradient_steps)
         self.gradient_steps += 1
 
+    def __step_replay(self):
+        obs, actions, old_preds, rewards = self.trajectory.PopBatch(self.memory_size)
+
+        with tf.GradientTape() as tape:
+            pred_values = self.critic.predict(obs)
+            advantages = rewards - pred_values
+            actor_loss = self.actor.model.fit(
+                [obs, advantages, old_preds],
+                [actions],
+                batch_size=BATCH_SIZE, shuffle=True, epochs=EPOCHS, verbose=False)
+            critic_loss = self.critic.model.fit(
+                [obs],
+                [rewards],
+                batch_size=BATCH_SIZE, shuffle=True, epochs=EPOCHS, verbose=False)
+            model_loss = get_ppo_actor_loss_clipped_obj(actor_loss, critic_loss)
+            self.writer.add_scalar('Model loss',  tape.gradient_steps)
+            self.gradient_steps += 1
+
     def replay(self):
         """ replay stored memory"""
         if self.trajectory.HasBatch(self.memory_size) is True:
-            self.__replay()
+            # self.__replay()
+            self.__step_replay()
             return
         pass
 

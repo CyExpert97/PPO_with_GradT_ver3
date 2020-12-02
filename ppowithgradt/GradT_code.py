@@ -71,11 +71,6 @@ def step(real_x, real_y):
     opt.apply_gradients(zip(model_grads, model.trainable_variables))
 
 
-print(x_train.shape)
-print(y_train.shape)
-print(x_test.shape)
-print(y_test.shape)
-
 # Training loop
 bat_per_epoch = math.floor(len(x_train) / batch_size)
 for epoch in range(epochs):
