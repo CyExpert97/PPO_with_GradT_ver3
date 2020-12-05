@@ -343,7 +343,7 @@ class CriticModel:
         return (self.batch_size, self.state_size,), (self.batch_size, 1,)
 
     def predict(self, state):
-        p = self.model.predict(state)
+        p = self.model.predict(state, steps=1)
         return p
 
 
@@ -608,31 +608,34 @@ class Agent:
             [obs, advantages, old_preds],
             [actions],
             batch_size=BATCH_SIZE, shuffle=True, epochs=EPOCHS, verbose=False)
+        print('Actor_loss:', type(actor_loss))
         critic_loss = self.critic.model.fit(
             [obs],
             [rewards],
             batch_size=BATCH_SIZE, shuffle=True, epochs=EPOCHS, verbose=False)
+        print('Critic_loss:', type(critic_loss))
         self.writer.add_scalar('Actor loss', actor_loss.history['loss'][-1], self.gradient_steps)
         self.writer.add_scalar('Critic loss', critic_loss.history['loss'][-1], self.gradient_steps)
         self.gradient_steps += 1
 
     def __step_replay(self):
         obs, actions, old_preds, rewards = self.trajectory.PopBatch(self.memory_size)
+        actions = tf.convert_to_tensor(actions, dtype=tf.float32)
+        old_preds = tf.convert_to_tensor(old_preds, dtype=tf.float32)
+        obs = tf.convert_to_tensor(obs, dtype=tf.float32)
+        rewards = tf.convert_to_tensor(rewards, dtype=tf.float32)
 
-        with tf.GradientTape() as tape:
+        with tf.GradientTape(persistent=True) as tape:
             pred_values = self.critic.predict(obs)
             advantages = rewards - pred_values
-            actor_loss = self.actor.model.fit(
-                [obs, advantages, old_preds],
-                [actions],
-                batch_size=BATCH_SIZE, shuffle=True, epochs=EPOCHS, verbose=False)
-            critic_loss = self.critic.model.fit(
-                [obs],
-                [rewards],
-                batch_size=BATCH_SIZE, shuffle=True, epochs=EPOCHS, verbose=False)
-            model_loss = get_ppo_actor_loss_clipped_obj(actor_loss, critic_loss)
-            self.writer.add_scalar('Model loss',  tape.gradient_steps)
-            self.gradient_steps += 1
+            actor_list = [obs, advantages, old_preds]
+            actor_loss = tape.gradient([actor_list], [actions])
+            critic_loss = tape.gradient([obs], [rewards])
+
+            self.optimizer.apply_gradients(zip(actor_loss, self.model.trainable_variables))
+            self.optimizer.apply_gradients(zip(critic_loss, self.model.trainable_variables))
+
+
 
     def replay(self):
         """ replay stored memory"""
@@ -821,8 +824,8 @@ def train():
                    writer=writer
                    )
 
-    tr = Trainer(game,agent,writer)
-    tr.run(EPISODES,EPISODES_START_WATCH)
+    tr = Trainer(game, agent, writer)
+    tr.run(EPISODES, EPISODES_START_WATCH)
     pass
 
 
