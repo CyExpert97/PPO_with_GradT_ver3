@@ -522,7 +522,10 @@ class Agent:
         self.actor = actor
         self.policy = policy
         self.trajectory = trajectory
+        self.loss_clip = float(kwargs.get('loss_clip', np.inf))
         self.memory_size = memory_size
+        self.loss_clip_epsilon = kwargs.get('loss_clip_epsilon', 0.2)
+        self.loss_entropy_beta = kwargs.get('loss_entropy_beta', 1e-3)
         learning_rate = kwargs.get('learning_rate', 1e-4)
         self.optimizer = kwargs.get('optimizer', Adam(lr=learning_rate))
         self.model = kwargs.get('model', None)
@@ -629,11 +632,17 @@ class Agent:
             pred_values = self.critic.predict(obs)
             advantages = rewards - pred_values
             actor_list = [obs, advantages, old_preds]
-            actor_loss = tape.gradient([actor_list], [actions])
-            critic_loss = tape.gradient([obs], [rewards])
+            if CONTINUOUS is True:
+                loss_actor = ActorModelContinuous.createLoss
+            else:
+                loss_actor = ActorModelDiscrete.createLoss
 
-            self.optimizer.apply_gradients(zip(actor_loss, self.model.trainable_variables))
-            self.optimizer.apply_gradients(zip(critic_loss, self.model.trainable_variables))
+            loss_critic = get_ppo_critic_loss(self.loss_clip)
+            actor_grads = tape.gradient(loss_actor, self.actor.model.trainable_variables)
+            critic_grads = tape.gradient(loss_critic, self.critic.model.trainable_variables)
+
+            # self.optimizer.apply_gradients(zip(actor_grads, self.actor.model.trainable_variables))
+            # self.optimizer.apply_gradients(zip(critic_grads, self.critic.model.trainable_variables))
 
 
 
