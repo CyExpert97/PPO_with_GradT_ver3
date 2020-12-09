@@ -346,7 +346,7 @@ class CriticModel:
         return (self.batch_size, self.state_size,), (self.batch_size, 1,)
 
     def predict(self, state):
-        p = self.model.predict(state, steps=1)
+        p = self.model.predict(state)
         return p
 
 
@@ -596,14 +596,6 @@ class Agent:
     #     grads = tape.gradient(loss, self.model.trainable_variables)
     #     self.optimizer.apply_gradients(zip(grads, self.model.trainable_variables))
 
-    # def training_loop(self):
-    #     bat_per_epoch = math.floor(len(self.x_train) / BATCH_SIZE)
-    #     for epoch in range(EPOCHS):
-    #         print('=', end='')
-    #         for i in range(bat_per_epoch):
-    #             n = i * BATCH_SIZE
-    #             self.step(self.x_train[n:n + BATCH_SIZE], self.y_train[n:n + BATCH_SIZE])
-
     def __replay(self):
         # replay
         obs, actions, old_preds, rewards = self.trajectory.PopBatch(self.memory_size)
@@ -628,30 +620,25 @@ class Agent:
         loss = k.sum(k.log(y_true) - k.log(y_pred))
         return loss
 
-
     def __step_replay(self):
         obs, actions, old_preds, rewards = self.trajectory.PopBatch(self.memory_size)
-        # actions = tf.convert_to_tensor(actions, dtype=tf.float32)
-        # old_preds = tf.convert_to_tensor(old_preds, dtype=tf.float32)
-        # obs = tf.convert_to_tensor(obs, dtype=tf.float32)
-        # rewards = tf.convert_to_tensor(rewards, dtype=tf.float32)
-        # print('obs:', obs)
-        # print('rewards:', rewards)
 
         with tf.GradientTape(persistent=True) as tape:
-            pred_y = self.critic.model(obs)
             pred_values = self.critic.predict(obs)
-            # print('pred_values:', pred_values)
             advantages = rewards - pred_values
-            # print('advantages:', advantages)
+            advantages = tf.convert_to_tensor(advantages, dtype=tf.float32)
+            tape.watch(advantages)
             actor_list = [obs, advantages, old_preds]
-            # loss_actor =
-            loss_critic = categorical_crossentropy(rewards, pred_y)
-            # actor_grads = tape.gradient(loss_actor, self.actor.model.trainable_variables)
-            critic_grads = tape.gradient(loss_critic, self.critic.model.trainable_variables)
-            # print(critic_grads)
+            pred_y = self.critic.model(obs)
+            pred_x = self.actor.model(actor_list)
 
-            # self.optimizer.apply_gradients(zip(actor_grads, self.actor.model.trainable_variables))
+            loss_actor = categorical_crossentropy(actions, pred_x)
+            loss_critic = categorical_crossentropy(rewards, pred_y)
+
+            actor_grads = tape.gradient(loss_actor, self.actor.model.trainable_variables)
+            critic_grads = tape.gradient(loss_critic, self.critic.model.trainable_variables)
+
+            self.optimizer.apply_gradients(zip(actor_grads, self.actor.model.trainable_variables))
             self.optimizer.apply_gradients(zip(critic_grads, self.critic.model.trainable_variables))
 
     def replay(self):
