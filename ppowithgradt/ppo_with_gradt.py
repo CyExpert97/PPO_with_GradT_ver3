@@ -9,11 +9,14 @@ from copy import deepcopy
 
 import gym
 import math
+import keras
+import keras.backend as k
 
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Input, Dense
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.losses import sparse_categorical_crossentropy
+from tensorflow.keras.losses import categorical_crossentropy
 
 from tensorboardX import SummaryWriter
 
@@ -621,34 +624,39 @@ class Agent:
         self.writer.add_scalar('Critic loss', critic_loss.history['loss'][-1], self.gradient_steps)
         self.gradient_steps += 1
 
+    def custom_loss(self, y_true, y_pred):
+        loss = k.sum(k.log(y_true) - k.log(y_pred))
+        return loss
+
+
     def __step_replay(self):
         obs, actions, old_preds, rewards = self.trajectory.PopBatch(self.memory_size)
-        actions = tf.convert_to_tensor(actions, dtype=tf.float32)
-        old_preds = tf.convert_to_tensor(old_preds, dtype=tf.float32)
-        obs = tf.convert_to_tensor(obs, dtype=tf.float32)
-        rewards = tf.convert_to_tensor(rewards, dtype=tf.float32)
+        # actions = tf.convert_to_tensor(actions, dtype=tf.float32)
+        # old_preds = tf.convert_to_tensor(old_preds, dtype=tf.float32)
+        # obs = tf.convert_to_tensor(obs, dtype=tf.float32)
+        # rewards = tf.convert_to_tensor(rewards, dtype=tf.float32)
+        # print('obs:', obs)
+        # print('rewards:', rewards)
 
         with tf.GradientTape(persistent=True) as tape:
+            pred_y = self.critic.model(obs)
             pred_values = self.critic.predict(obs)
+            # print('pred_values:', pred_values)
             advantages = rewards - pred_values
+            # print('advantages:', advantages)
             actor_list = [obs, advantages, old_preds]
-            if CONTINUOUS is True:
-                loss_actor = ActorModelContinuous.createLoss
-            else:
-                loss_actor = ActorModelDiscrete.createLoss
-
-            loss_critic = get_ppo_critic_loss(self.loss_clip)
-            actor_grads = tape.gradient(loss_actor, self.actor.model.trainable_variables)
+            # loss_actor =
+            loss_critic = categorical_crossentropy(rewards, pred_y)
+            # actor_grads = tape.gradient(loss_actor, self.actor.model.trainable_variables)
             critic_grads = tape.gradient(loss_critic, self.critic.model.trainable_variables)
+            # print(critic_grads)
 
             # self.optimizer.apply_gradients(zip(actor_grads, self.actor.model.trainable_variables))
-            # self.optimizer.apply_gradients(zip(critic_grads, self.critic.model.trainable_variables))
-
-
+            self.optimizer.apply_gradients(zip(critic_grads, self.critic.model.trainable_variables))
 
     def replay(self):
         """ replay stored memory"""
-        if self.trajectory.HasBatch(self.memory_size) is True:
+        if self.trajectory.HasBatch(self.memory_size):
             # self.__replay()
             self.__step_replay()
             return
