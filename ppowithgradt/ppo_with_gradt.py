@@ -628,18 +628,21 @@ class Agent:
             advantages = rewards - pred_values
             advantages = tf.convert_to_tensor(advantages, dtype=tf.float32)
             tape.watch(advantages)
-            actor_list = [obs, advantages, old_preds]
+            obs = tf.convert_to_tensor(obs, dtype=tf.float32)
+            tape.watch(obs)
+            tape.watched_variables()
+            actor_list = [obs, advantages]
             pred_y = self.critic.model(obs)
             pred_x = self.actor.model(actor_list)
 
             loss_actor = categorical_crossentropy(actions, pred_x)
             loss_critic = categorical_crossentropy(rewards, pred_y)
 
-            actor_grads = tape.gradient(loss_actor, self.actor.model.trainable_variables)
-            critic_grads = tape.gradient(loss_critic, self.critic.model.trainable_variables)
+        actor_grads = tape.gradient(loss_actor, self.actor.model.trainable_variables)
+        critic_grads = tape.gradient(loss_critic, self.critic.model.trainable_variables)
 
-            self.optimizer.apply_gradients(zip(actor_grads, self.actor.model.trainable_variables))
-            self.optimizer.apply_gradients(zip(critic_grads, self.critic.model.trainable_variables))
+        self.optimizer.apply_gradients(zip(actor_grads, self.actor.model.trainable_variables))
+        self.optimizer.apply_gradients(zip(critic_grads, self.critic.model.trainable_variables))
 
     def replay(self):
         """ replay stored memory"""
