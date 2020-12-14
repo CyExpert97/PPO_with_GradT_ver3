@@ -8,15 +8,16 @@ import tensorflow as tf
 from copy import deepcopy
 
 import gym
-import math
-import keras
-import keras.backend as k
+# import math
+# import keras
+# import keras.backend as k
+
 
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Input, Dense
 from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.losses import sparse_categorical_crossentropy
-from tensorflow.keras.losses import categorical_crossentropy
+# from tensorflow.keras.losses import sparse_categorical_crossentropy
+# from tensorflow.keras.losses import categorical_crossentropy
 
 from tensorboardX import SummaryWriter
 
@@ -526,6 +527,7 @@ class Agent:
         self.policy = policy
         self.trajectory = trajectory
         self.loss_clip = float(kwargs.get('loss_clip', np.inf))
+        self.c_loss = get_ppo_critic_loss(self.loss_clip)
         self.memory_size = memory_size
         self.loss_clip_epsilon = kwargs.get('loss_clip_epsilon', 0.2)
         self.loss_entropy_beta = kwargs.get('loss_entropy_beta', 1e-3)
@@ -534,6 +536,8 @@ class Agent:
         self.model = kwargs.get('model', None)
         self.gradient_steps = 0
         self.writer = writer
+        self.loss_clip_epsilon = kwargs.get('loss_clip_epsilon', 0.2)
+        self.loss_sigma = kwargs.get('loss_sigma', 1.0)
         pass
 
     @property
@@ -616,10 +620,6 @@ class Agent:
         self.writer.add_scalar('Critic loss', critic_loss.history['loss'][-1], self.gradient_steps)
         self.gradient_steps += 1
 
-    def custom_loss(self, y_true, y_pred):
-        loss = k.sum(k.log(y_true) - k.log(y_pred))
-        return loss
-
     def __step_replay(self):
         obs, actions, old_preds, rewards = self.trajectory.PopBatch(self.memory_size)
 
@@ -627,16 +627,14 @@ class Agent:
             pred_values = self.critic.predict(obs)
             advantages = rewards - pred_values
             advantages = tf.convert_to_tensor(advantages, dtype=tf.float32)
-            tape.watch(advantages)
             obs = tf.convert_to_tensor(obs, dtype=tf.float32)
-            tape.watch(obs)
-            tape.watched_variables()
             actor_list = [obs, advantages]
-            pred_y = self.critic.model(obs)
             pred_x = self.actor.model(actor_list)
+            pred_y = self.critic.model(obs)
 
-            loss_actor = categorical_crossentropy(actions, pred_x)
-            loss_critic = categorical_crossentropy(rewards, pred_y)
+            loss_actor_function = get_ppo_actor_loss_clipped_obj_continuous(advantages, old_preds, self.loss_clip_epsilon, self.loss_sigma)
+            loss_actor = loss_actor_function(actions, pred_x)
+            loss_critic = self.c_loss(rewards, pred_y)
 
         actor_grads = tape.gradient(loss_actor, self.actor.model.trainable_variables)
         critic_grads = tape.gradient(loss_critic, self.critic.model.trainable_variables)
@@ -646,7 +644,7 @@ class Agent:
 
     def replay(self):
         """ replay stored memory"""
-        if self.trajectory.HasBatch(self.memory_size):
+        if self.trajectory.HasBatch(self.memory_size) is True:
             # self.__replay()
             self.__step_replay()
             return
