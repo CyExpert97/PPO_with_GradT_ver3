@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-
+import datetime
 import os
 import json
 
@@ -11,7 +11,7 @@ import gym
 # import math
 # import keras
 # import keras.backend as k
-
+from opt_einsum.backends import torch
 
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Input, Dense
@@ -592,14 +592,6 @@ class Agent:
         """
         self.policy.Tick()
 
-    # def step(self, x_true, y_true):
-    #     with tf.GradientTape() as tape:
-    #         y_pred = self.model(x_true)
-    #         loss = get_ppo_actor_loss_clipped_obj(y_true, y_pred)  # Look into loss function differences(Want something more towards PPO).
-    #
-    #     grads = tape.gradient(loss, self.model.trainable_variables)
-    #     self.optimizer.apply_gradients(zip(grads, self.model.trainable_variables))
-
     def __replay(self):
         # replay
         obs, actions, old_preds, rewards = self.trajectory.PopBatch(self.memory_size)
@@ -616,12 +608,18 @@ class Agent:
             [rewards],
             batch_size=BATCH_SIZE, shuffle=True, epochs=EPOCHS, verbose=False)
         print('Critic_loss:', type(critic_loss))
+        # print(actor_loss.history['loss'][-1])
         self.writer.add_scalar('Actor loss', actor_loss.history['loss'][-1], self.gradient_steps)
         self.writer.add_scalar('Critic loss', critic_loss.history['loss'][-1], self.gradient_steps)
         self.gradient_steps += 1
 
     def __step_replay(self):
         obs, actions, old_preds, rewards = self.trajectory.PopBatch(self.memory_size)
+
+        actor_loss = tf.keras.metrics.Mean('actor_loss', dtype=tf.float32)
+        actor_accuracy = tf.keras.metrics.Poisson('actor_accuracy')
+        critic_loss = tf.keras.metrics.Mean('critic_loss', dtype=tf.float32)
+        critic_accuracy = tf.keras.metrics.Poisson('critic_accuracy')
 
         with tf.GradientTape(persistent=True) as tape:
             pred_values = self.critic.predict(obs)
@@ -635,12 +633,51 @@ class Agent:
             loss_actor_function = get_ppo_actor_loss_clipped_obj_continuous(advantages, old_preds, self.loss_clip_epsilon, self.loss_sigma)
             loss_actor = loss_actor_function(actions, pred_x)
             loss_critic = self.c_loss(rewards, pred_y)
+            # loss_actor = self.actor.loss(actions, pred_x)
+            # loss_critic = self.critic.loss(rewards, pred_y)
+            # print(loss_actor.eval())
+            # print('Actor_loss:', type(loss_actor))
+            # print('Critic_loss:', type(loss_critic))
 
         actor_grads = tape.gradient(loss_actor, self.actor.model.trainable_variables)
         critic_grads = tape.gradient(loss_critic, self.critic.model.trainable_variables)
 
+        # x = zip(actor_grads, self.actor.model.trainable_variables)
+        # y = zip(critic_grads, self.critic.model.trainable_variables)
+
         self.optimizer.apply_gradients(zip(actor_grads, self.actor.model.trainable_variables))
         self.optimizer.apply_gradients(zip(critic_grads, self.critic.model.trainable_variables))
+
+        actor_loss(loss_actor)
+        actor_accuracy(actions, pred_x)
+        critic_loss(loss_critic)
+        critic_accuracy(rewards, pred_y)
+
+        current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        actor_log_dir = 'logs/gradient_tape/' + current_time + '/actor'
+        critic_log_dir = 'logs/gradient_tape/' + current_time + '/critic'
+        actor_summary_writer = tf.summary.create_file_writer(actor_log_dir)
+        critic_summary_writer = tf.summary.create_file_writer(critic_log_dir)
+
+        for epoch in range(EPOCHS):
+            with actor_summary_writer.as_default():
+                tf.summary.scalar('Actor loss', actor_loss.result(), step=epoch)
+                tf.summary.scalar('Actor accuracy', actor_accuracy.result(), step=epoch)
+            with critic_summary_writer.as_default():
+                tf.summary.scalar('Critic loss', critic_loss.result(), step=epoch)
+                tf.summary.scalar('Critic accuracy', critic_accuracy.result(), step=epoch)
+
+        actor_loss.reset_states()
+        critic_loss.reset_states()
+        actor_accuracy.reset_states()
+        critic_accuracy.reset_states()
+
+        # self.writer.add_scalar('Actor loss', actor_loss.result(), self.gradient_steps)
+        # self.writer.scalar('Actor accuracy', actor_accuracy.result(), self.gradient_steps)
+        # self.writer.scalar('Critic loss', critic_loss.result(), self.gradient_steps)
+        # self.writer.scalar('Critic accuracy', critic_accuracy.result(), self.gradient_steps)
+        # self.gradient_steps += 1
+
 
     def replay(self):
         """ replay stored memory"""
