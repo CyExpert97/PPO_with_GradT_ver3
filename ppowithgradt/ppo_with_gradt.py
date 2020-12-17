@@ -647,8 +647,8 @@ class Agent:
         critic_accuracy(rewards, pred_y)
 
         current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        actor_log_dir = 'ppowithgradt/logs/gradient_tape/' + current_time + '/actor'
-        critic_log_dir = 'ppowithgradt/logs/gradient_tape/' + current_time + '/critic'
+        actor_log_dir = 'logs/gradient_tape/' + current_time + '/actor'
+        critic_log_dir = 'logs/gradient_tape/' + current_time + '/critic'
         actor_summary_writer = tf.summary.create_file_writer(actor_log_dir)
         critic_summary_writer = tf.summary.create_file_writer(critic_log_dir)
 
