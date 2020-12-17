@@ -11,7 +11,6 @@ import gym
 # import math
 # import keras
 # import keras.backend as k
-from opt_einsum.backends import torch
 
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Input, Dense
@@ -521,7 +520,7 @@ class PPOGameMemory:
 
 
 class Agent:
-    def __init__(self, actor, critic, policy, trajectory, memory_size, writer, **kwargs):
+    def __init__(self, actor, critic, policy, trajectory, writer, memory_size, **kwargs):
         self.critic = critic
         self.actor = actor
         self.policy = policy
@@ -627,23 +626,17 @@ class Agent:
             advantages = tf.convert_to_tensor(advantages, dtype=tf.float32)
             obs = tf.convert_to_tensor(obs, dtype=tf.float32)
             actor_list = [obs, advantages]
-            pred_x = self.actor.model(actor_list)
-            pred_y = self.critic.model(obs)
+            pred_x = self.actor.model(actor_list, training=True)
+            pred_y = self.critic.model(obs, training=True)
 
             loss_actor_function = get_ppo_actor_loss_clipped_obj_continuous(advantages, old_preds, self.loss_clip_epsilon, self.loss_sigma)
             loss_actor = loss_actor_function(actions, pred_x)
             loss_critic = self.c_loss(rewards, pred_y)
             # loss_actor = self.actor.loss(actions, pred_x)
             # loss_critic = self.critic.loss(rewards, pred_y)
-            # print(loss_actor.eval())
-            # print('Actor_loss:', type(loss_actor))
-            # print('Critic_loss:', type(loss_critic))
 
         actor_grads = tape.gradient(loss_actor, self.actor.model.trainable_variables)
         critic_grads = tape.gradient(loss_critic, self.critic.model.trainable_variables)
-
-        # x = zip(actor_grads, self.actor.model.trainable_variables)
-        # y = zip(critic_grads, self.critic.model.trainable_variables)
 
         self.optimizer.apply_gradients(zip(actor_grads, self.actor.model.trainable_variables))
         self.optimizer.apply_gradients(zip(critic_grads, self.critic.model.trainable_variables))
@@ -654,10 +647,12 @@ class Agent:
         critic_accuracy(rewards, pred_y)
 
         current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        actor_log_dir = 'logs/gradient_tape/' + current_time + '/actor'
-        critic_log_dir = 'logs/gradient_tape/' + current_time + '/critic'
+        actor_log_dir = 'ppowithgradt/logs/gradient_tape/' + current_time + '/actor'
+        critic_log_dir = 'ppowithgradt/logs/gradient_tape/' + current_time + '/critic'
         actor_summary_writer = tf.summary.create_file_writer(actor_log_dir)
         critic_summary_writer = tf.summary.create_file_writer(critic_log_dir)
+
+        self.model = self.model
 
         for epoch in range(EPOCHS):
             with actor_summary_writer.as_default():
@@ -677,7 +672,6 @@ class Agent:
         # self.writer.scalar('Critic loss', critic_loss.result(), self.gradient_steps)
         # self.writer.scalar('Critic accuracy', critic_accuracy.result(), self.gradient_steps)
         # self.gradient_steps += 1
-
 
     def replay(self):
         """ replay stored memory"""
