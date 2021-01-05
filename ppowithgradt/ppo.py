@@ -2,7 +2,7 @@
 
 import os
 import json
-
+import tensorflow as tf
 import numpy as np
 from copy import deepcopy
 
@@ -16,6 +16,9 @@ from tensorflow.keras.optimizers import Adam
 from tensorboardX import SummaryWriter
 
 from ppo_loss import get_ppo_actor_loss_clipped_obj, get_ppo_actor_loss_clipped_obj_continuous, get_ppo_critic_loss
+
+print(tf.executing_eagerly())
+
 
 #ENV = 'LunarLander-v2'
 # CONTINUOUS = False

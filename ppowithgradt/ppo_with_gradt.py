@@ -22,6 +22,11 @@ from tensorboardX import SummaryWriter
 
 from ppo_loss import get_ppo_actor_loss_clipped_obj, get_ppo_actor_loss_clipped_obj_continuous, get_ppo_critic_loss
 
+
+tf.compat.v1.enable_eager_execution()
+
+print(tf.executing_eagerly())
+
 #ENV = 'LunarLander-v2'
 # CONTINUOUS = False
 ENV = 'LunarLanderContinuous-v2'
@@ -346,7 +351,7 @@ class CriticModel:
         return (self.batch_size, self.state_size,), (self.batch_size, 1,)
 
     def predict(self, state):
-        p = self.model.predict(state)
+        p = self.model(state)
         return p
 
 
@@ -601,12 +606,12 @@ class Agent:
             [obs, advantages, old_preds],
             [actions],
             batch_size=BATCH_SIZE, shuffle=True, epochs=EPOCHS, verbose=False)
-        print('Actor_loss:', type(actor_loss))
+        # print('Actor_loss:', type(actor_loss))
         critic_loss = self.critic.model.fit(
             [obs],
             [rewards],
             batch_size=BATCH_SIZE, shuffle=True, epochs=EPOCHS, verbose=False)
-        print('Critic_loss:', type(critic_loss))
+        # print('Critic_loss:', type(critic_loss))
         # print(actor_loss.history['loss'][-1])
         self.writer.add_scalar('Actor loss', actor_loss.history['loss'][-1], self.gradient_steps)
         self.writer.add_scalar('Critic loss', critic_loss.history['loss'][-1], self.gradient_steps)
@@ -616,9 +621,15 @@ class Agent:
         obs, actions, old_preds, rewards = self.trajectory.PopBatch(self.memory_size)
 
         actor_loss = tf.keras.metrics.Mean('actor_loss', dtype=tf.float32)
-        actor_accuracy = tf.keras.metrics.Poisson('actor_accuracy')
+        actor_accuracy = tf.keras.metrics.Mean('actor_accuracy', dtype=tf.float32)
         critic_loss = tf.keras.metrics.Mean('critic_loss', dtype=tf.float32)
-        critic_accuracy = tf.keras.metrics.Poisson('critic_accuracy')
+        critic_accuracy = tf.keras.metrics.Mean('critic_accuracy', dtype=tf.float32)
+
+        current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        actor_log_dir = 'logs/gradient_tape/' + current_time + '/actor'
+        critic_log_dir = 'logs/gradient_tape/' + current_time + '/critic'
+        actor_summary_writer = tf.summary.create_file_writer(actor_log_dir)
+        critic_summary_writer = tf.summary.create_file_writer(critic_log_dir)
 
         with tf.GradientTape(persistent=True) as tape:
             pred_values = self.critic.predict(obs)
@@ -632,8 +643,6 @@ class Agent:
             loss_actor_function = get_ppo_actor_loss_clipped_obj_continuous(advantages, old_preds, self.loss_clip_epsilon, self.loss_sigma)
             loss_actor = loss_actor_function(actions, pred_x)
             loss_critic = self.c_loss(rewards, pred_y)
-            # loss_actor = self.actor.loss(actions, pred_x)
-            # loss_critic = self.critic.loss(rewards, pred_y)
 
         actor_grads = tape.gradient(loss_actor, self.actor.model.trainable_variables)
         critic_grads = tape.gradient(loss_critic, self.critic.model.trainable_variables)
@@ -646,32 +655,28 @@ class Agent:
         critic_loss(loss_critic)
         critic_accuracy(rewards, pred_y)
 
-        current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        actor_log_dir = 'logs/gradient_tape/' + current_time + '/actor'
-        critic_log_dir = 'logs/gradient_tape/' + current_time + '/critic'
-        actor_summary_writer = tf.summary.create_file_writer(actor_log_dir)
-        critic_summary_writer = tf.summary.create_file_writer(critic_log_dir)
+        # self.model = self.model
 
-        self.model = self.model
+        with actor_summary_writer.as_default():
+            tf.summary.scalar('Actor loss', actor_loss.result(), step=self.gradient_steps)
+            tf.summary.scalar('Actor accuracy', actor_accuracy.result(), step=self.gradient_steps)
 
-        for epoch in range(EPOCHS):
-            with actor_summary_writer.as_default():
-                tf.summary.scalar('Actor loss', actor_loss.result(), step=epoch)
-                tf.summary.scalar('Actor accuracy', actor_accuracy.result(), step=epoch)
-            with critic_summary_writer.as_default():
-                tf.summary.scalar('Critic loss', critic_loss.result(), step=epoch)
-                tf.summary.scalar('Critic accuracy', critic_accuracy.result(), step=epoch)
+        with critic_summary_writer.as_default():
+            tf.summary.scalar('Critic loss', critic_loss.result(), step=self.gradient_steps)
+            tf.summary.scalar('Critic accuracy', critic_accuracy.result(), step=self.gradient_steps)
+        self.gradient_steps += 1
+
+        template = 'Gradient_steps: {}, Loss: {}, Accuracy: {}, Test Loss: {}, Test Accuracy: {}'
+        print(template.format(self.gradient_steps,
+                              actor_loss.result(),
+                              actor_accuracy.result() * 100,
+                              critic_loss.result(),
+                              critic_accuracy.result() * 100))
 
         actor_loss.reset_states()
         critic_loss.reset_states()
         actor_accuracy.reset_states()
         critic_accuracy.reset_states()
-
-        # self.writer.add_scalar('Actor loss', actor_loss.result(), self.gradient_steps)
-        # self.writer.scalar('Actor accuracy', actor_accuracy.result(), self.gradient_steps)
-        # self.writer.scalar('Critic loss', critic_loss.result(), self.gradient_steps)
-        # self.writer.scalar('Critic accuracy', critic_accuracy.result(), self.gradient_steps)
-        # self.gradient_steps += 1
 
     def replay(self):
         """ replay stored memory"""

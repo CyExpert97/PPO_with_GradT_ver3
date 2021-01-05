@@ -10,6 +10,8 @@ from sklearn.model_selection import train_test_split
 import numpy as np
 import math
 
+print(tf.executing_eagerly())
+
 # x and y are defined as our sample data
 x = np.asarray(tf.random.uniform(minval=0, maxval=1, shape=(6400, 10), dtype=tf.float32))
 y = keras.utils.to_categorical(tf.reduce_sum(x, axis=-1), num_classes=10)
