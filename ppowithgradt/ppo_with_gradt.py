@@ -538,6 +538,7 @@ class Agent:
         learning_rate = kwargs.get('learning_rate', 1e-4)
         self.optimizer = kwargs.get('optimizer', Adam(lr=learning_rate))
         self.model = kwargs.get('model', None)
+        self.current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         self.gradient_steps = 0
         self.writer = writer
         self.loss_clip_epsilon = kwargs.get('loss_clip_epsilon', 0.2)
@@ -625,9 +626,8 @@ class Agent:
         critic_loss = tf.keras.metrics.Mean('critic_loss', dtype=tf.float32)
         critic_accuracy = tf.keras.metrics.Mean('critic_accuracy', dtype=tf.float32)
 
-        current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        actor_log_dir = 'logs/gradient_tape/' + current_time + '/actor'
-        critic_log_dir = 'logs/gradient_tape/' + current_time + '/critic'
+        actor_log_dir = 'new_logs/gradient_tape/' + self.current_time + '/actor'
+        critic_log_dir = 'new_logs/gradient_tape/' + self.current_time + '/critic'
         actor_summary_writer = tf.summary.create_file_writer(actor_log_dir)
         critic_summary_writer = tf.summary.create_file_writer(critic_log_dir)
 
@@ -645,10 +645,10 @@ class Agent:
             loss_critic = self.c_loss(rewards, pred_y)
 
         actor_grads = tape.gradient(loss_actor, self.actor.model.trainable_variables)
-        critic_grads = tape.gradient(loss_critic, self.critic.model.trainable_variables)
+        # critic_grads = tape.gradient(loss_critic, self.critic.model.trainable_variables)
 
         self.optimizer.apply_gradients(zip(actor_grads, self.actor.model.trainable_variables))
-        self.optimizer.apply_gradients(zip(critic_grads, self.critic.model.trainable_variables))
+        # self.optimizer.apply_gradients(zip(critic_grads, self.critic.model.trainable_variables))
 
         actor_loss(loss_actor)
         actor_accuracy(actions, pred_x)
